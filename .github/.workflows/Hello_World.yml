@@ -1,0 +1,17 @@
+name: Hello World
+on:
+  workflow_dispatch:
+
+jobs:
+  # ============================================================================
+  # 1) Job, der auf Github Runner läuft (Github --> Actions)
+  #    - Dieser Job wird auf dem Github-Server ausgeführt. 
+  # ============================================================================
+  my-hello-world-job:
+    runs-on: ubuntu-latest
+    # Das Label gibt an wo der job laufen soll. z.B. self-hosted für den Self-Hosted-Runner, oder ubuntu-latest für Github-Runner mit Ubuntu
+    steps:
+      - name: Print Hello World
+        run: |
+          echo "Hello World"
+        shell: bash
