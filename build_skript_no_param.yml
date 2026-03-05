@@ -1,0 +1,103 @@
+name: Build ESP32-S3 Linux Image
+
+on:
+  # Manueller Trigger mit Input-Parametern
+  workflow_dispatch:
+  
+# ------------------------------------------------------------------------------
+# Concurrency:
+#   - Verhindert parallele Builds auf derselben self-hosted VM (z.B. Platzprobleme)
+#   - cancel-in-progress=false: Läuft den aktuellen Build immer zu Ende
+# ------------------------------------------------------------------------------
+concurrency:
+  group: Default
+  cancel-in-progress: false
+  
+jobs:
+  build:
+    runs-on: self-hosted
+    timeout-minutes: 360  # 6 Stunden Timeout
+    
+    permissions:
+      contents: read
+      actions: read
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        #with:
+        #  path: repo
+      
+      - name: Vorbereitung Build-Umgebung
+        run: |
+        
+          # Erstelle Build-Verzeichnis
+          WORKDIR="$GITHUB_WORKSPACE/DisplayAdaptions"
+          mkdir -p "$WORKDIR"
+          cd "$WORKDIR"
+          
+          cp -v "$GITHUB_WORKSPACE/rebuild-esp32s3-linux-wifi.sh" .
+          cp -v "$GITHUB_WORKSPACE/"*.conf . 2>/dev/null || true
+          cp -v "$GITHUB_WORKSPACE/"sdkconfig.defaults.* . 2>/dev/null || true
+          cp -v "$GITHUB_WORKSPACE/kernel-config-spi.frag" . 2>/dev/null || true
+          cp -v "$GITHUB_WORKSPACE/rootfs_esp32s3_devkit_c1_8m_spi.config" . 2>/dev/null || true
+          
+          chmod +x rebuild-esp32s3-linux-wifi.sh
+          echo "Build-Umgebung vorbereitet in $WORKDIR"
+          ls -la
+                   
+          # Mache Skript ausführbar
+          chmod +x rebuild-esp32s3-linux-wifi.sh
+      
+      - name: System-Abhängigkeiten prüfen
+        run: |
+          
+          # Überprüfe einige wichtige Tools
+          which gcc || echo "WARNING: gcc nicht gefunden"
+          which make || echo "WARNING: make nicht gefunden"
+          which git || echo "WARNING: git nicht gefunden"
+          which python3 || echo "WARNING: python3 nicht gefunden"
+          
+          echo "=== System-Info ==="
+          uname -a
+          df -h /build/DisplayAdaptions
+      
+      - name: Setze Build-Umgebungsvariablen
+        run: |
+          cd $WORKDIR
+      
+      - name: ESP32-S3 Linux Build ausführen
+        working-directory: ${{ env.GITHUB_WORKSPACE }}/DisplayAdaptions
+        timeout-minutes: 360
+        run: |         
+          # Führe Build-Skript aus
+          ./rebuild-esp32s3-linux-wifi.sh
+      
+      - name: Upload Build-Artefakte
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: esp32s3-linux-images-${{ github.run_number }}
+          path: |
+            ${{ env.GITHUB_WORKSPACE }}/DisplayAdaptions/build/build-buildroot-*/images/xipImage
+            ${{ env.GITHUB_WORKSPACE }}/DisplayAdaptions/build/build-buildroot-*/images/rootfs.cramfs
+            ${{ env.GITHUB_WORKSPACE }}/DisplayAdaptions/build/build-buildroot-*/images/etc.jffs2
+          retention-days: 7
+          if-no-files-found: error
+      
+      - name: Build-Ergebnis anzeigen
+        if: always()
+        run: |
+          echo "=== Build-Status ==="
+          if [ -f $WORKDIR/build/build-buildroot-*/images/xipImage ]; then
+            echo "✅ Build erfolgreich!"
+            echo ""
+            echo "=== Build-Artefakte ==="
+            ls -lh $WORKDIR/build/build-buildroot-*/images/
+            echo ""
+            echo "Die Build-Artefakte können unter 'Actions → Workflow Run → Artifacts' heruntergeladen werden."
+          else
+            echo "❌ Build fehlgeschlagen oder unvollständig"
+            echo "Überprüfen Sie die Logs für Details."
+            exit 1
+          fi
